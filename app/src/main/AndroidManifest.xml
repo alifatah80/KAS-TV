@@ -7,6 +7,10 @@
         android:theme="@style/Theme.KASTV"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
+        <activity
+    android:name=".PlaylistActivity"
+    android:exported="false"
+    android:screenOrientation="sensorLandscape" />
         <activity android:name=".PlayerActivity" android:exported="false" android:screenOrientation="sensorLandscape"/>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
