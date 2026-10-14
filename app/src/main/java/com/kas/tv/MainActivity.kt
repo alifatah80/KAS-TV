@@ -286,7 +286,7 @@ class MainActivity : AppCompatActivity() {
 
         items.forEach { item ->
             val button = Button(this).apply {
-                text = item.name
+                this.text = item.name
                 isAllCaps = false
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 setTextColor(-1)
