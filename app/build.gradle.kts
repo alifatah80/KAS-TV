@@ -2,17 +2,17 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
 android {
     namespace = "com.kas.tv"
     compileSdk = 35
+
     defaultConfig {
         applicationId = "com.kas.tv"
         minSdk = 23
         targetSdk = 28
         versionCode = 1
         versionName = "1.0"
-    }
-}
     }
 
     compileOptions {
@@ -24,7 +24,7 @@ android {
         jvmTarget = "17"
     }
 }
-dependencies {
+
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
