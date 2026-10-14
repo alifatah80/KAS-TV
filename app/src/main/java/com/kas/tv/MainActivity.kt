@@ -163,3 +163,5 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showStatus(s: String) { if (::status.isInitialized) status.text = s }
+                                }
+                               status.text 
