@@ -39,7 +39,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var content: LinearLayout
     private lateinit var status: TextView
     private lateinit var refreshIcon: TextView
-    private lateinit var refreshButton: LinearLayout
     private lateinit var sourceInput: EditText
     private lateinit var serverInput: EditText
     private lateinit var usernameInput: EditText
@@ -49,7 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var spinner: ObjectAnimator? = null
 
     private val gold = Color.rgb(245, 180, 0)
-    private val background = Color.rgb(12, 13, 17)
+    private val bgColor = Color.rgb(12, 13, 17)
     private val cardColor = Color.rgb(29, 31, 39)
     private val white = Color.WHITE
     private val grey = Color.rgb(175, 179, 190)
@@ -67,7 +66,7 @@ class MainActivity : AppCompatActivity() {
                             parsePlaylist(playlistText)
                         } ?: showStatus("نەتوانرا فایلەکە بخوێندرێتەوە")
                 } catch (e: Exception) {
-                    showStatus("هەڵە: ${e.message}")
+                    showStatus("هەڵە لە خوێندنەوەی فایل")
                 }
             }
         }
@@ -75,24 +74,26 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        window.statusBarColor = background
-        window.navigationBarColor = background
+        requestedOrientation =
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
+        window.statusBarColor = bgColor
+        window.navigationBarColor = bgColor
 
         buildScreen()
-        showStatus("لە بەشی Playlist ـەوە لیستی کەناڵەکان بار بکە.")
+        showStatus("بەخێربێیت بۆ KAS TV")
     }
 
     private fun buildScreen() {
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(background)
+            setBackgroundColor(bgColor)
             isFillViewport = true
         }
 
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(10), dp(24), dp(20))
-            setBackgroundColor(background)
+            setBackgroundColor(bgColor)
         }
 
         scroll.addView(page)
@@ -129,16 +130,12 @@ class MainActivity : AppCompatActivity() {
 
         header.addView(
             subtitle,
-            LinearLayout.LayoutParams(
-                0,
-                dp(55),
-                1f
-            )
+            LinearLayout.LayoutParams(0, dp(55), 1f)
         )
 
         page.addView(header)
 
-        // Four navigation tabs
+        // Navigation tabs
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -176,6 +173,7 @@ class MainActivity : AppCompatActivity() {
                 dp(54),
                 1f
             )
+
             params.setMargins(dp(4), dp(4), dp(4), dp(4))
             tabs.addView(button, params)
         }
@@ -184,7 +182,7 @@ class MainActivity : AppCompatActivity() {
         updateTabs(tabs, tabNames)
 
         // Refresh button
-        refreshButton = LinearLayout(this).apply {
+        val refreshButton = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(14), dp(8), dp(14), dp(8))
@@ -229,7 +227,7 @@ class MainActivity : AppCompatActivity() {
 
         page.addView(refreshRow)
 
-        // Status message
+        // Status
         status = TextView(this).apply {
             textSize = 13f
             setTextColor(grey)
@@ -251,7 +249,7 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
-        // Playlist form
+        // Playlist panel
         playlistPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -261,6 +259,10 @@ class MainActivity : AppCompatActivity() {
         serverInput = makeInput("Xtream Server URL")
         usernameInput = makeInput("Username")
         passwordInput = makeInput("Password")
+
+        passwordInput.inputType =
+            android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
 
         addField(playlistPanel, sourceInput)
 
@@ -280,15 +282,20 @@ class MainActivity : AppCompatActivity() {
 
         addActionButton(playlistPanel, "Connect Xtream") {
             val server = serverInput.text.toString()
-                .trim().trimEnd("/")
+                .trim()
+                .removeSuffix("/")
+
             val user = usernameInput.text.toString().trim()
             val pass = passwordInput.text.toString()
 
-            if (server.isBlank() ||
+            if (
+                server.isBlank() ||
                 user.isBlank() ||
                 pass.isBlank()
             ) {
-                showStatus("تکایە Server و Username و Password پڕ بکەرەوە.")
+                showStatus(
+                    "تکایە Server و Username و Password پڕ بکەرەوە."
+                )
             } else {
                 val url = "$server/get.php?username=${Uri.encode(user)}" +
                     "&password=${Uri.encode(pass)}" +
@@ -303,8 +310,7 @@ class MainActivity : AppCompatActivity() {
 
         addLabel(
             playlistPanel,
-            "ئەم وەشانە MAC / Portal پەیوەندی ناکات؛ " +
-                "بۆ ئەوە پێویستە سیستەمی دابینکەر پشتگیری بکات."
+            "بەشی MAC / Portal لەم وەشانەدا چالاک نییە."
         )
 
         renderContent()
@@ -315,13 +321,15 @@ class MainActivity : AppCompatActivity() {
         labels: List<String>
     ) {
         for (i in 0 until tabs.childCount) {
-            val view = tabs.getChildAt(i) as TextView
-            val name = view.tag as String
+            val button = tabs.getChildAt(i) as TextView
+            val name = button.tag as String
             val active = name == selectedTab
 
-            view.text = labels[i]
-            view.setTextColor(if (active) Color.BLACK else white)
-            view.background = rounded(
+            button.text = labels[i]
+            button.setTextColor(
+                if (active) Color.BLACK else white
+            )
+            button.background = rounded(
                 if (active) gold else cardColor,
                 12
             )
@@ -332,10 +340,7 @@ class MainActivity : AppCompatActivity() {
         content.removeAllViews()
 
         if (selectedTab == "Playlist") {
-            content.addView(
-                playlistPanel,
-                matchWidth()
-            )
+            content.addView(playlistPanel, matchWidth())
             return
         }
 
@@ -392,7 +397,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Two cards per row for the Smart TV layout
         var index = 0
 
         while (index < filtered.size) {
@@ -400,9 +404,10 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
             }
 
-            repeat(2) { column ->
+            repeat(2) {
                 if (index < filtered.size) {
                     val item = filtered[index]
+
                     row.addView(
                         makeCard(item),
                         LinearLayout.LayoutParams(
@@ -418,11 +423,16 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                     )
+
                     index++
                 } else {
                     row.addView(
-                        View(this),
-                        LinearLayout.LayoutParams(0, dp(78), 1f)
+                        View(this@MainActivity),
+                        LinearLayout.LayoutParams(
+                            0,
+                            dp(78),
+                            1f
+                        )
                     )
                 }
             }
@@ -448,6 +458,7 @@ class MainActivity : AppCompatActivity() {
                     if (focused) gold else cardColor,
                     12
                 )
+
                 (view as TextView).setTextColor(
                     if (focused) Color.BLACK else white
                 )
@@ -458,8 +469,10 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity,
                     PlayerActivity::class.java
                 )
+
                 intent.putExtra("url", item.url)
                 intent.putExtra("name", item.name)
+
                 startActivity(intent)
             }
         }
@@ -467,6 +480,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshPlaylist() {
         if (spinner?.isRunning == true) return
+
+        if (lastUrl.isNotBlank()) {
+            loadUrl(lastUrl)
+        } else if (playlistText.isNotBlank()) {
+            startSpinner()
+
+            parsePlaylist(playlistText)
+
+            stopSpinner()
+            showStatus("Playlist نوێ کرایەوە.")
+        } else {
+            showStatus(
+                "سەرەتا لە Playlist ـەوە لیستێک بار بکە."
+            )
+        }
+    }
+
+    private fun startSpinner() {
+        spinner?.cancel()
 
         spinner = ObjectAnimator.ofFloat(
             refreshIcon,
@@ -478,42 +510,32 @@ class MainActivity : AppCompatActivity() {
             repeatCount = ValueAnimator.INFINITE
             start()
         }
+    }
 
-        if (lastUrl.isNotBlank()) {
-            loadUrl(lastUrl)
-        } else if (playlistText.isNotBlank()) {
-            parsePlaylist(playlistText)
-            stopSpinner()
-            showStatus("Playlist نوێ کرایەوە.")
-        } else {
-            stopSpinner()
-            showStatus("سەرەتا لە Playlist ـەوە لیستێک بار بکە.")
+    private fun stopSpinner() {
+        spinner?.cancel()
+        spinner = null
+
+        if (::refreshIcon.isInitialized) {
+            refreshIcon.rotation = 0f
         }
     }
 
     private fun loadUrl(url: String) {
-        if (!url.startsWith("http://") &&
+        if (
+            !url.startsWith("http://") &&
             !url.startsWith("https://")
         ) {
-            showStatus("URL ـێکی دروستی http:// یان https:// بنووسە.")
+            showStatus(
+                "URL ـێکی دروستی http:// یان https:// بنووسە."
+            )
             return
         }
 
         lastUrl = url
         showStatus("Playlist دەخوێندرێتەوە...")
 
-        if (spinner?.isRunning != true) {
-            spinner = ObjectAnimator.ofFloat(
-                refreshIcon,
-                "rotation",
-                0f,
-                360f
-            ).apply {
-                duration = 700
-                repeatCount = ValueAnimator.INFINITE
-                start()
-            }
-        }
+        startSpinner()
 
         lifecycleScope.launch {
             try {
@@ -523,6 +545,7 @@ class MainActivity : AppCompatActivity() {
 
                     connection.connectTimeout = 15000
                     connection.readTimeout = 20000
+
                     connection.setRequestProperty(
                         "User-Agent",
                         "KAS-TV/1.0"
@@ -539,9 +562,14 @@ class MainActivity : AppCompatActivity() {
 
                 playlistText = result
                 parsePlaylist(result)
-                showStatus("Playlist بە سەرکەوتوویی بار کرا.")
+
+                showStatus(
+                    "Playlist بار کرا. ژمارەی بابەتەکان: ${items.size}"
+                )
             } catch (e: Exception) {
-                showStatus("هەڵە لە بارکردنی Playlist: ${e.message}")
+                showStatus(
+                    "نەتوانرا Playlist بار بکرێت. URL ـەکە بپشکنە."
+                )
             } finally {
                 stopSpinner()
             }
@@ -563,26 +591,40 @@ class MainActivity : AppCompatActivity() {
                     .ifBlank { "Channel" }
 
                 val tvgName = Regex("""tvg-name="([^"]+)"""")
-                    .find(line)?.groupValues?.getOrNull(1)
+                    .find(line)
+                    ?.groupValues
+                    ?.getOrNull(1)
 
                 if (!tvgName.isNullOrBlank()) {
                     name = tvgName
                 }
 
                 group = Regex("""group-title="([^"]+)"""")
-                    .find(line)?.groupValues?.getOrNull(1) ?: ""
+                    .find(line)
+                    ?.groupValues
+                    ?.getOrNull(1) ?: ""
             } else if (
                 line.startsWith("http://") ||
                 line.startsWith("https://")
             ) {
-                items.add(TvItem(name, line, group))
+                items.add(
+                    TvItem(
+                        name = name,
+                        url = line,
+                        group = group
+                    )
+                )
+
                 name = "Channel"
                 group = ""
             }
         }
 
         renderContent()
-        showStatus("ژمارەی بابەتە بارکراوەکان: ${items.size}")
+
+        showStatus(
+            "ژمارەی بابەتە بارکراوەکان: ${items.size}"
+        )
     }
 
     private fun makeInput(hintText: String): EditText {
@@ -602,7 +644,9 @@ class MainActivity : AppCompatActivity() {
         field: EditText
     ) {
         val params = matchWidth()
+
         params.setMargins(dp(3), dp(5), dp(3), dp(5))
+
         parent.addView(field, params)
     }
 
@@ -610,25 +654,29 @@ class MainActivity : AppCompatActivity() {
         parent: LinearLayout,
         text: String
     ) {
-        parent.addView(TextView(this).apply {
-            this.text = text
-            textSize = 19f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(gold)
-            setPadding(dp(4), dp(12), dp(4), dp(5))
-        })
+        parent.addView(
+            TextView(this).apply {
+                this.text = text
+                textSize = 19f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(gold)
+                setPadding(dp(4), dp(12), dp(4), dp(5))
+            }
+        )
     }
 
     private fun addLabel(
         parent: LinearLayout,
         text: String
     ) {
-        parent.addView(TextView(this).apply {
-            this.text = text
-            textSize = 14f
-            setTextColor(grey)
-            setPadding(dp(8), dp(10), dp(8), dp(10))
-        })
+        parent.addView(
+            TextView(this).apply {
+                this.text = text
+                textSize = 14f
+                setTextColor(grey)
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+            }
+        )
     }
 
     private fun addActionButton(
@@ -645,12 +693,18 @@ class MainActivity : AppCompatActivity() {
             background = rounded(gold, 10)
             isFocusable = true
             isClickable = true
+
             setPadding(dp(12), dp(12), dp(12), dp(12))
-            setOnClickListener { action() }
+
+            setOnClickListener {
+                action()
+            }
         }
 
         val params = matchWidth()
+
         params.setMargins(dp(3), dp(5), dp(3), dp(5))
+
         parent.addView(button, params)
     }
 
@@ -672,21 +726,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
+        return (
+            value * resources.displayMetrics.density
+        ).toInt()
     }
 
     private fun showStatus(message: String) {
         if (::status.isInitialized) {
             status.text = message
-        }
-    }
-
-    private fun stopSpinner() {
-        spinner?.cancel()
-        spinner = null
-
-        if (::refreshIcon.isInitialized) {
-            refreshIcon.rotation = 0f
         }
     }
 
