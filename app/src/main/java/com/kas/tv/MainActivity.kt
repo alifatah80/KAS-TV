@@ -13,6 +13,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import android.text.InputType
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -54,6 +55,7 @@ class MainActivity : AppCompatActivity() {
     private var lastUrl = ""
     private var playlistText = ""
     private var loading = false
+    private var categoryAfterSourceLoad: String? = null
 
     private lateinit var root: LinearLayout
     private lateinit var sourceList: LinearLayout
@@ -119,12 +121,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        row1.addView(circleMenu("Live TV", "▶", Color.rgb(142, 68, 173)) { buildCategoryPage("Live TV") }, circleParams())
-        row1.addView(circleMenu("Movies", "🎬", Color.rgb(238, 116, 164)) { buildCategoryPage("Movies") }, circleParams())
+        row1.addView(circleMenu("Live TV", "▶", Color.rgb(142, 68, 173)) { openCategory("Live TV") }, circleParams())
+        row1.addView(circleMenu("Movies", "🎬", Color.rgb(238, 116, 164)) { openCategory("Movies") }, circleParams())
         grid.addView(row1)
 
         val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-        row2.addView(circleMenu("Series", "▣", Color.rgb(242, 132, 35)) { buildCategoryPage("Series") }, circleParams())
+        row2.addView(circleMenu("Series", "▣", Color.rgb(242, 132, 35)) { openCategory("Series") }, circleParams())
         row2.addView(circleMenu("Playlist", "☷", Color.rgb(222, 174, 0)) { buildPlaylistPage() }, circleParams())
         grid.addView(row2)
 
@@ -173,6 +175,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openCategory(category: String) {
+        if (sources.isEmpty()) {
+            buildCategoryPage(category)
+            return
+        }
+
+        if (sources.size == 1) {
+            val source = sources.first()
+            if (source.id == activeSourceId && items.isNotEmpty()) {
+                buildCategoryPage(category)
+            } else {
+                categoryAfterSourceLoad = category
+                openSource(source, returnHome = false)
+            }
+            return
+        }
+
+        val sourceNames = sources.map { it.name }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Playlist هەڵبژێرە بۆ $category")
+            .setItems(sourceNames) { _, which ->
+                val source = sources.getOrNull(which) ?: return@setItems
+                if (source.id == activeSourceId && items.isNotEmpty()) {
+                    buildCategoryPage(category)
+                } else {
+                    categoryAfterSourceLoad = category
+                    openSource(source, returnHome = false)
+                }
+            }
+            .setNegativeButton("پاشگەزبوونەوە", null)
+            .show()
+    }
+
     private fun buildCategoryPage(category: String) {
         selectedCategory = category
         root = newPageRoot()
@@ -186,16 +221,6 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(button("⌂  Home") { buildHome() }, LinearLayout.LayoutParams(dp(100), dp(42)))
         root.addView(header)
-
-        val welcome = TextView(this).apply {
-            text = if (activeSourceName.isBlank()) "بەخێربێیت بۆ $category" else "بەخێربێیت بۆ $activeSourceName\n$category"
-            textSize = 19f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(white)
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, dp(10))
-        }
-        root.addView(welcome)
 
         val chosen = items.filter { categoryOf(it) == category }
         root.addView(TextView(this).apply {
@@ -402,10 +427,14 @@ class MainActivity : AppCompatActivity() {
                     val text = withContext(Dispatchers.IO) { file.readText() }
                     activatePlaylist(text, source, returnHome)
                 } catch (e: Exception) {
+                    categoryAfterSourceLoad = null
                     toast("نەتوانرا Playlist بکرێتەوە: ${e.localizedMessage ?: "هەڵە"}")
                 }
             }
-            "portal" -> toast("Stalker Portal لەم وەشانەدا پەخشکردنی ڕاستەوخۆی API ـی تێدا جێبەجێ نەکراوە.")
+            "portal" -> {
+                categoryAfterSourceLoad = null
+                toast("Stalker Portal لەم وەشانەدا پەخشکردنی ڕاستەوخۆی API ـی تێدا جێبەجێ نەکراوە.")
+            }
         }
     }
 
@@ -470,6 +499,7 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putString("last_url", url).apply()
                 if (!quiet) toast("${items.size} بڕگە بارکرا")
             } catch (e: Exception) {
+                categoryAfterSourceLoad = null
                 if (!quiet) toast("بارکردن سەرکەوتوو نەبوو: ${e.localizedMessage ?: "هەڵەی نەناسراو"}")
             } finally {
                 loading = false
@@ -480,6 +510,7 @@ class MainActivity : AppCompatActivity() {
     private fun activatePlaylist(text: String, source: PlaylistSource, returnHome: Boolean) {
         val parsed = parsePlaylist(text)
         if (parsed.isEmpty()) {
+            categoryAfterSourceLoad = null
             toast("هیچ لینکێکی ڤیدیۆ لە Playlist ـەکەدا نەدۆزرایەوە")
             return
         }
@@ -493,7 +524,16 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putString("last_url", source.value).apply()
         }
         prefs.edit().putString("last_source_id", source.id).apply()
-        if (returnHome) buildHome()
+        if (returnHome) {
+            categoryAfterSourceLoad = null
+            buildHome()
+        } else {
+            val nextCategory = categoryAfterSourceLoad
+            if (nextCategory != null) {
+                categoryAfterSourceLoad = null
+                buildCategoryPage(nextCategory)
+            }
+        }
     }
 
     private fun parsePlaylist(text: String): List<TvItem> {
@@ -535,6 +575,7 @@ class MainActivity : AppCompatActivity() {
             putStringArrayListExtra("channel_names", ArrayList(channels.map { it.name }))
             putStringArrayListExtra("channel_urls", ArrayList(channels.map { it.url }))
             putExtra("player_fullscreen", prefs.getBoolean("player_fullscreen", true))
+            putExtra("overlay_timeout_seconds", prefs.getInt("overlay_timeout_seconds", 1))
         }
         startActivity(intent)
     }
@@ -550,19 +591,36 @@ class MainActivity : AppCompatActivity() {
         val autoLoad = CheckBox(this).apply { text = "بارکردنی خۆکاری دوا Playlist"; setTextColor(white); isChecked = prefs.getBoolean("auto_load", true) }
         val autoRefresh = CheckBox(this).apply { text = "نوێکردنەوەی خۆکار هەر ١٥ خولەک"; setTextColor(white); isChecked = prefs.getBoolean("auto_refresh", false) }
         val fullscreen = CheckBox(this).apply { text = "پەخشکردن بە شێوەی فول‌سکرین"; setTextColor(white); isChecked = prefs.getBoolean("player_fullscreen", true) }
+        val timeoutLabel = TextView(this).apply {
+            text = "ماوەی پیشاندانی ناوی کەناڵ و لیست (چرکە، ١ تا ٦٠):"
+            textSize = 14f
+            setTextColor(gold)
+            setPadding(0, dp(14), 0, dp(4))
+        }
+        val timeoutInput = edit("ژمارەی چرکە", prefs.getInt("overlay_timeout_seconds", 1).toString()).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+        }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(18), dp(8), dp(18))
             addView(autoLoad)
             addView(autoRefresh)
             addView(fullscreen)
+            addView(timeoutLabel)
+            addView(timeoutInput)
         }
         root.addView(box)
         root.addView(button("پاشەکەوتکردنی ڕێکخستنەکان") {
+            val timeoutSeconds = timeoutInput.text.toString().toIntOrNull()
+            if (timeoutSeconds == null || timeoutSeconds !in 1..60) {
+                toast("تکایە ژمارەیەک لە ١ تا ٦٠ چرکە بنووسە")
+                return@button
+            }
             prefs.edit()
                 .putBoolean("auto_load", autoLoad.isChecked)
                 .putBoolean("auto_refresh", autoRefresh.isChecked)
                 .putBoolean("player_fullscreen", fullscreen.isChecked)
+                .putInt("overlay_timeout_seconds", timeoutSeconds)
                 .apply()
             toast("ڕێکخستنەکان پاشەکەوت کران")
             buildHome()
