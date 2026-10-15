@@ -48,6 +48,7 @@ class PlayerActivity : AppCompatActivity() {
     private var channelNames = arrayListOf<String>()
     private var channelUrls = arrayListOf<String>()
     private var currentName = "KAS TV"
+    private var overlayTimeoutMs = 1000L
 
     private val hideOverlays = Runnable { hideTemporaryOverlays() }
 
@@ -58,6 +59,7 @@ class PlayerActivity : AppCompatActivity() {
         enterFullscreen()
 
         currentName = intent.getStringExtra("name") ?: "KAS TV"
+        overlayTimeoutMs = intent.getIntExtra("overlay_timeout_seconds", 1).coerceIn(1, 60) * 1000L
         val initialUrl = intent.getStringExtra("url")?.trim().orEmpty()
         channelNames = intent.getStringArrayListExtra("channel_names") ?: arrayListOf(currentName)
         channelUrls = intent.getStringArrayListExtra("channel_urls") ?: arrayListOf(initialUrl)
@@ -103,7 +105,7 @@ class PlayerActivity : AppCompatActivity() {
             text = currentName
             textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(white)
+            setTextColor(Color.rgb(255, 204, 0))
             setPadding(dp(14), dp(10), dp(14), dp(10))
             background = rounded(0xCC000000.toInt(), 8)
             gravity = Gravity.CENTER_VERTICAL
@@ -218,7 +220,7 @@ class PlayerActivity : AppCompatActivity() {
                 textSize = 13f
                 maxLines = 2
                 typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
-                setTextColor(white)
+                setTextColor(if (selected) Color.rgb(255, 204, 0) else white)
             }, LinearLayout.LayoutParams(0, -2, 1f))
             list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(3), 0, dp(3)) })
         }
@@ -317,7 +319,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun scheduleHide() {
         handler.removeCallbacks(hideOverlays)
-        handler.postDelayed(hideOverlays, 1000L)
+        handler.postDelayed(hideOverlays, overlayTimeoutMs)
     }
 
     private fun hideTemporaryOverlays() {
