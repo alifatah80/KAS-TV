@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -28,504 +30,334 @@ import androidx.media3.ui.PlayerView
 class PlayerActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
-
     private lateinit var playerView: PlayerView
-    private lateinit var title: TextView
+    private lateinit var titleView: TextView
     private lateinit var progressBar: ProgressBar
-    private lateinit var channelList: LinearLayout
+    private lateinit var channelPanel: LinearLayout
+    private lateinit var controlsBar: LinearLayout
+    private lateinit var listToggle: TextView
 
-    private val bgColor = Color.rgb(10, 11, 15)
-    private val cardColor = Color.rgb(29, 31, 39)
-    private val gold = Color.rgb(245, 180, 0)
+    private val handler = Handler(Looper.getMainLooper())
+    private val bgColor = Color.rgb(8, 9, 13)
+    private val cardColor = Color.rgb(28, 30, 39)
+    private val purple = Color.rgb(142, 68, 173)
     private val white = Color.WHITE
-    private val grey = Color.rgb(175, 179, 190)
+    private val grey = Color.rgb(185, 190, 202)
 
     private var currentIndex = 0
     private var channelNames = arrayListOf<String>()
     private var channelUrls = arrayListOf<String>()
     private var currentName = "KAS TV"
 
+    private val hideOverlays = Runnable { hideTemporaryOverlays() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
-
-        if (intent.getBooleanExtra("player_fullscreen", true)) {
-            enterFullscreen()
-        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        enterFullscreen()
 
         currentName = intent.getStringExtra("name") ?: "KAS TV"
+        val initialUrl = intent.getStringExtra("url")?.trim().orEmpty()
+        channelNames = intent.getStringArrayListExtra("channel_names") ?: arrayListOf(currentName)
+        channelUrls = intent.getStringArrayListExtra("channel_urls") ?: arrayListOf(initialUrl)
+        channelUrls = ArrayList(channelUrls.filter { it.isNotBlank() })
+        if (channelNames.size != channelUrls.size) {
+            channelNames = ArrayList(channelUrls.indices.map { channelNames.getOrNull(it) ?: "Channel ${it + 1}" })
+        }
+        currentIndex = intent.getIntExtra("selected_index", 0).coerceIn(0, (channelUrls.size - 1).coerceAtLeast(0))
 
-        val initialUrl = intent.getStringExtra("url")
-            ?.trim()
-            .orEmpty()
-
-        channelNames =
-            intent.getStringArrayListExtra("channel_names")
-                ?: arrayListOf(currentName)
-
-        channelUrls =
-            intent.getStringArrayListExtra("channel_urls")
-                ?: arrayListOf(initialUrl)
-
-        currentIndex = intent.getIntExtra(
-            "selected_index",
-            0
-        ).coerceIn(
-            0,
-            (channelUrls.size - 1).coerceAtLeast(0)
-        )
-
-        if (initialUrl.isBlank()) {
-            showError("URL کەناڵەکە بەتاڵە")
+        if (channelUrls.isEmpty() || initialUrl.isBlank()) {
+            showError("URL ـی کەناڵەکە بەتاڵە")
             return
         }
 
-        if (channelUrls.isEmpty()) {
-            channelUrls.add(initialUrl)
-            channelNames.add(currentName)
-            currentIndex = 0
-        }
-
         buildPlayerLayout()
-        playChannel(initialUrl, currentName)
+        startPlaylistPlayback()
+        showTemporaryOverlays()
     }
 
     @Suppress("DEPRECATION")
     private fun enterFullscreen() {
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
 
     private fun buildPlayerLayout() {
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(bgColor)
-        }
-
-        val videoArea = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-        }
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
 
         playerView = PlayerView(this).apply {
             useController = true
+            controllerAutoShow = true
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
             setBackgroundColor(Color.BLACK)
         }
+        root.addView(playerView, FrameLayout.LayoutParams(-1, -1))
 
-        videoArea.addView(
-            playerView,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-
-        title = TextView(this).apply {
+        titleView = TextView(this).apply {
             text = currentName
             textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(white)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(14), dp(10), dp(14), dp(10))
             background = rounded(0xCC000000.toInt(), 8)
             gravity = Gravity.CENTER_VERTICAL
         }
+        root.addView(titleView, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
+            setMargins(dp(12), dp(10), dp(72), 0)
+        })
 
-        videoArea.addView(
-            title,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP
-            ).apply {
-                setMargins(dp(8), dp(8), dp(8), 0)
+        progressBar = ProgressBar(this).apply { visibility = View.VISIBLE }
+        root.addView(progressBar, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER))
+
+        listToggle = TextView(this).apply {
+            text = "☰"
+            textSize = 23f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            background = rounded(0xCC000000.toInt(), 30)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                if (channelPanel.visibility == View.VISIBLE) {
+                    channelPanel.visibility = View.GONE
+                    scheduleHide()
+                } else {
+                    channelPanel.visibility = View.VISIBLE
+                    titleView.visibility = View.VISIBLE
+                    controlsBar.visibility = View.VISIBLE
+                    renderChannelList()
+                    scheduleHide()
+                }
             }
-        )
+        }
+        root.addView(listToggle, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
+            setMargins(0, dp(10), dp(10), 0)
+        })
 
-        progressBar = ProgressBar(this).apply {
+        channelPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            background = rounded(0xE8171922.toInt(), 12)
             visibility = View.VISIBLE
         }
-
-        videoArea.addView(
-            progressBar,
-            FrameLayout.LayoutParams(
-                dp(48),
-                dp(48),
-                Gravity.CENTER
-            )
-        )
-
-        root.addView(
-            videoArea,
-            LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                2.5f
-            )
-        )
-
-        val sidePanel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(bgColor)
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-        }
-
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        val panelHeader = TextView(this).apply {
+            text = "📺  کەناڵەکان"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(white)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(8), dp(6), dp(8))
+            setPadding(dp(6), dp(6), dp(6), dp(10))
         }
+        channelPanel.addView(panelHeader, LinearLayout.LayoutParams(-1, -2))
+        val scroll = ScrollView(this).apply { overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        val channelList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        channelList.tag = "kas_channel_list"
+        scroll.addView(channelList, ViewGroup.LayoutParams(-1, -2))
+        channelPanel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(channelPanel, FrameLayout.LayoutParams(dp(265), -1, Gravity.END).apply {
+            setMargins(0, dp(66), dp(10), dp(72))
+        })
 
-        header.addView(
-            TextView(this).apply {
-                text = "📺  کەناڵەکان"
-                textSize = 17f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(gold)
-            },
-            LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
-        )
-
-        header.addView(
-            TextView(this).apply {
-                text = "${channelUrls.count { it.isNotBlank() }}"
-                textSize = 13f
-                setTextColor(grey)
-            }
-        )
-
-        sidePanel.addView(header)
-
-        sidePanel.addView(
-            View(this).apply {
-                setBackgroundColor(cardColor)
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(1)
-            )
-        )
-
-        val scroll = ScrollView(this).apply {
-            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        controlsBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            background = rounded(0xCC000000.toInt(), 12)
         }
+        controlsBar.addView(controlButton("⏮  Previous") { playPrevious() }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
+        controlsBar.addView(controlButton("Next  ⏭") { playNext() }, LinearLayout.LayoutParams(0, dp(44), 1f).apply { setMargins(dp(3), 0, dp(3), 0) })
+        root.addView(controlsBar, FrameLayout.LayoutParams(dp(300), -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            setMargins(dp(8), 0, dp(8), dp(12))
+        })
 
-        channelList = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        // چاککراوە: LayoutParams ـی دروست بەکاردەهێنرێت
-        scroll.addView(
-            channelList,
-            ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        sidePanel.addView(
-            scroll,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        )
-
-        root.addView(
-            sidePanel,
-            LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                1f
-            )
-        )
-
+        playerView.setOnClickListener { showTemporaryOverlays() }
         setContentView(root)
-
         renderChannelList()
     }
 
     private fun renderChannelList() {
-
-        if (!::channelList.isInitialized) return
-
-        channelList.removeAllViews()
-
+        if (!::channelPanel.isInitialized) return
+        val list = channelPanel.findViewWithTag<LinearLayout>("kas_channel_list") ?: return
+        list.removeAllViews()
         channelUrls.forEachIndexed { index, url ->
-
             if (url.isBlank()) return@forEachIndexed
-
-            val name = channelNames
-                .getOrNull(index)
-                ?.ifBlank { "Channel ${index + 1}" }
-                ?: "Channel ${index + 1}"
-
+            val name = channelNames.getOrNull(index)?.ifBlank { "Channel ${index + 1}" } ?: "Channel ${index + 1}"
             val selected = index == currentIndex
-
-            val item = LinearLayout(this).apply {
+            val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-
-                setPadding(
-                    dp(8),
-                    dp(10),
-                    dp(8),
-                    dp(10)
-                )
-
-                background = rounded(
-                    if (selected) gold else cardColor,
-                    8
-                )
-
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                background = rounded(if (selected) purple else cardColor, 8)
                 isClickable = true
                 isFocusable = true
-                contentDescription = name
-
                 setOnClickListener {
-                    if (index != currentIndex) {
-                        currentIndex = index
-                        currentName = name
-
-                        renderChannelList()
-                        playChannel(url, name)
-                    }
+                    currentIndex = index
+                    player?.seekTo(index, 0L)
+                    player?.playWhenReady = true
+                    currentName = name
+                    titleView.text = name
+                    renderChannelList()
+                    showTemporaryOverlays()
                 }
             }
-
-            item.addView(
-                TextView(this).apply {
-                    text = if (selected) "▶" else "▷"
-                    textSize = 17f
-                    setTextColor(
-                        if (selected) Color.BLACK else gold
-                    )
-                    gravity = Gravity.CENTER
-                },
-                LinearLayout.LayoutParams(
-                    dp(28),
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-
-            item.addView(
-                TextView(this).apply {
-                    text = name
-                    textSize = 13f
-                    maxLines = 2
-
-                    setTextColor(
-                        if (selected) Color.BLACK else white
-                    )
-
-                    typeface = if (selected) {
-                        Typeface.DEFAULT_BOLD
-                    } else {
-                        Typeface.DEFAULT
-                    }
-                },
-                LinearLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    1f
-                )
-            )
-
-            channelList.addView(
-                item,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    setMargins(0, dp(3), 0, dp(3))
-                }
-            )
+            row.addView(TextView(this).apply {
+                text = if (selected) "▶" else "▷"
+                textSize = 16f
+                setTextColor(white)
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(25), -2))
+            row.addView(TextView(this).apply {
+                text = name
+                textSize = 13f
+                maxLines = 2
+                typeface = if (selected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                setTextColor(white)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(3), 0, dp(3)) })
         }
     }
 
-    private fun playChannel(url: String, name: String) {
-
-        if (
-            !::title.isInitialized ||
-            !::progressBar.isInitialized ||
-            !::playerView.isInitialized
-        ) {
-            return
-        }
-
-        title.visibility = View.VISIBLE
-        title.text = "$name\nبارکردنی کەناڵ..."
-
-        progressBar.visibility = View.VISIBLE
-
-        playerView.player = null
-        player?.release()
-        player = null
-
+    private fun startPlaylistPlayback() {
         try {
-
             val httpFactory = DefaultHttpDataSource.Factory()
                 .setUserAgent("KAS-TV Android Player")
                 .setConnectTimeoutMs(20000)
                 .setReadTimeoutMs(25000)
                 .setAllowCrossProtocolRedirects(true)
-
-            val dataSourceFactory =
-                DefaultDataSource.Factory(this, httpFactory)
-
-            val newPlayer = ExoPlayer.Builder(this)
-                .setMediaSourceFactory(
-                    DefaultMediaSourceFactory(dataSourceFactory)
-                )
+            val dataSourceFactory = DefaultDataSource.Factory(this, httpFactory)
+            val exo = ExoPlayer.Builder(this)
+                .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                 .build()
+            player = exo
+            playerView.player = exo
 
-            player = newPlayer
-            playerView.player = newPlayer
-
-            newPlayer.addListener(
-                object : Player.Listener {
-
-                    override fun onPlaybackStateChanged(
-                        playbackState: Int
-                    ) {
-
-                        when (playbackState) {
-
-                            Player.STATE_BUFFERING -> {
-                                progressBar.visibility = View.VISIBLE
-                                title.visibility = View.VISIBLE
-                                title.text = "$name\nبارکردنی کەناڵ..."
-                            }
-
-                            Player.STATE_READY -> {
-                                progressBar.visibility = View.GONE
-                                title.visibility = View.GONE
-                            }
-
-                            Player.STATE_ENDED -> {
-                                progressBar.visibility = View.GONE
-                                title.visibility = View.VISIBLE
-                                title.text = "$name\nپەخشکردن تەواو بوو"
-                            }
-
-                            Player.STATE_IDLE -> {
-                                progressBar.visibility = View.GONE
-                            }
-                        }
-                    }
-
-                    override fun onPlayerError(
-                        error: PlaybackException
-                    ) {
-
-                        progressBar.visibility = View.GONE
-                        title.visibility = View.VISIBLE
-
-                        val details = when (error.errorCode) {
-
-                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
-                                "پەیوەندی ئینتەرنێت سەرکەوتوو نەبوو"
-
-                            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
-                                "کاتی چاوەڕوانی پەیوەندی تەواو بوو"
-
-                            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
-                                "سێرڤەر وەڵامی HTTP ـی نادروستی دا"
-
-                            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ->
-                                "فۆرماتی ڤیدیۆکە نادروستە"
-
-                            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
-                                "فۆرماتی ڤیدیۆکە پشتگیری ناکرێت"
-
-                            else -> error.errorCodeName
-                        }
-
-                        title.text = "$name\n$details"
+            exo.addListener(object : Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    val index = exo.currentMediaItemIndex
+                    if (index in channelUrls.indices) {
+                        currentIndex = index
+                        currentName = channelNames.getOrNull(index) ?: "Channel ${index + 1}"
+                        titleView.text = currentName
+                        renderChannelList()
                     }
                 }
-            )
 
-            val builder = MediaItem.Builder().setUri(url)
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> {
+                            progressBar.visibility = View.VISIBLE
+                            titleView.visibility = View.VISIBLE
+                        }
+                        Player.STATE_READY -> {
+                            progressBar.visibility = View.GONE
+                            scheduleHide()
+                        }
+                        Player.STATE_ENDED -> {
+                            progressBar.visibility = View.GONE
+                            showTemporaryOverlays()
+                        }
+                        Player.STATE_IDLE -> progressBar.visibility = View.GONE
+                    }
+                }
 
-            val cleanUrl = url.substringBefore("?").lowercase()
+                override fun onPlayerError(error: PlaybackException) {
+                    progressBar.visibility = View.GONE
+                    titleView.visibility = View.VISIBLE
+                    titleView.text = "$currentName\nپەخشکردن سەرکەوتوو نەبوو: ${error.errorCodeName}"
+                    showTemporaryOverlays()
+                }
+            })
 
-            if (
-                cleanUrl.endsWith(".m3u8") ||
-                cleanUrl.endsWith(".m3u")
-            ) {
-                builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            val mediaItems = channelUrls.map { url ->
+                val cleanUrl = url.substringBefore("?").lowercase()
+                val builder = MediaItem.Builder().setUri(url)
+                if (cleanUrl.endsWith(".m3u8") || cleanUrl.endsWith(".m3u")) {
+                    builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+                }
+                builder.build()
             }
-
-            newPlayer.setMediaItem(builder.build())
-            newPlayer.prepare()
-            newPlayer.playWhenReady = true
-
+            exo.setMediaItems(mediaItems, currentIndex, 0L)
+            exo.prepare()
+            exo.playWhenReady = true
         } catch (e: Exception) {
-
-            progressBar.visibility = View.GONE
-            title.visibility = View.VISIBLE
-
-            title.text =
-                "$name\nهەڵە: ${
-                    e.localizedMessage
-                        ?: "نەتوانرا کەناڵەکە پەخش بکرێت"
-                }"
+            showError("هەڵە لە پەخشکردن: ${e.localizedMessage ?: "هەڵەی نەناسراو"}")
         }
+    }
+
+    private fun playNext() {
+        val exo = player ?: return
+        if (channelUrls.isEmpty()) return
+        if (exo.currentMediaItemIndex < channelUrls.lastIndex) exo.seekToNextMediaItem() else exo.seekTo(0, 0L)
+        exo.playWhenReady = true
+        showTemporaryOverlays()
+    }
+
+    private fun playPrevious() {
+        val exo = player ?: return
+        if (channelUrls.isEmpty()) return
+        if (exo.currentMediaItemIndex > 0) exo.seekToPreviousMediaItem() else exo.seekTo(channelUrls.lastIndex, 0L)
+        exo.playWhenReady = true
+        showTemporaryOverlays()
+    }
+
+    private fun showTemporaryOverlays() {
+        if (!::channelPanel.isInitialized) return
+        channelPanel.visibility = View.VISIBLE
+        controlsBar.visibility = View.VISIBLE
+        titleView.visibility = View.VISIBLE
+        scheduleHide()
+    }
+
+    private fun scheduleHide() {
+        handler.removeCallbacks(hideOverlays)
+        handler.postDelayed(hideOverlays, 1000L)
+    }
+
+    private fun hideTemporaryOverlays() {
+        if (!::channelPanel.isInitialized) return
+        channelPanel.visibility = View.GONE
+        controlsBar.visibility = View.GONE
+        titleView.visibility = View.GONE
+        // The small menu icon remains so the channel list can be opened again.
+        listToggle.visibility = View.VISIBLE
     }
 
     private fun showError(message: String) {
-
-        setContentView(
-            TextView(this).apply {
-                text = message
-                textSize = 17f
-                setTextColor(white)
-                gravity = Gravity.CENTER
-
-                setPadding(
-                    dp(20),
-                    dp(20),
-                    dp(20),
-                    dp(20)
-                )
-
-                setBackgroundColor(Color.BLACK)
-            }
-        )
+        setContentView(TextView(this).apply {
+            text = message
+            textSize = 17f
+            setTextColor(white)
+            gravity = Gravity.CENTER
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setBackgroundColor(Color.BLACK)
+        })
     }
 
-    private fun rounded(
-        color: Int,
-        radius: Int
-    ): GradientDrawable {
-
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-        }
+    private fun controlButton(textValue: String, action: () -> Unit) = TextView(this).apply {
+        text = textValue
+        textSize = 13f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(white)
+        gravity = Gravity.CENTER
+        background = rounded(0xCC252735.toInt(), 8)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { action() }
     }
 
-    private fun dp(value: Int): Int {
-        return (
-            value * resources.displayMetrics.density
-        ).toInt()
+    private fun rounded(color: Int, radius: Int) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radius).toFloat()
     }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     override fun onStart() {
         super.onStart()
@@ -538,18 +370,11 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-
-        if (::playerView.isInitialized) {
-            playerView.player = null
-        }
-
+        handler.removeCallbacksAndMessages(null)
+        if (::playerView.isInitialized) playerView.player = null
         player?.release()
         player = null
-
-        window.clearFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
-
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
     }
 }
