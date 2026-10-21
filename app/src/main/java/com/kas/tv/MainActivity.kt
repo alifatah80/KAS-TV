@@ -56,6 +56,8 @@ class MainActivity : AppCompatActivity() {
     private var playlistText = ""
     private var loading = false
     private var categoryAfterSourceLoad: String? = null
+    private var pendingFileName: String = ""
+    private var playlistStatusView: TextView? = null
 
     private lateinit var root: LinearLayout
     private lateinit var sourceList: LinearLayout
@@ -298,63 +300,101 @@ class MainActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(button("⌂ Home") { buildHome() }, LinearLayout.LayoutParams(dp(100), dp(42)))
         root.addView(header)
-        root.addView(TextView(this).apply {
-            text = "لینک یان فایل زیاد بکە؛ کاتێک سەرکەوتوو بوو، دەگەڕێیتەوە سەرەتا."
-            textSize = 13f
-            setTextColor(grey)
-            setPadding(0, dp(8), 0, dp(10))
-        })
 
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val urlInput = edit("لینکی M3U / M3U8")
-        content.addView(urlInput)
-        content.addView(button("بارکردنی URL") {
-            val value = urlInput.text.toString().trim()
-            if (value.startsWith("http://", true) || value.startsWith("https://", true)) {
-                val source = PlaylistSource(UUID.randomUUID().toString(), "Playlist ${sources.size + 1}", "url", value)
-                sources.add(source)
-                saveSources()
-                openSource(source, returnHome = true)
-            } else toast("تکایە لینکێکی http یان https بنووسە")
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(5), 0, dp(5)) })
+        content.addView(label("١. زیادکردنی لینک یان سەرچاوە"))
+        content.addView(TextView(this).apply {
+            text = "ناوێک بنووسە، زانیارییەکان داخڵ بکە و Save بکە. ئەگەر لینکەکە دروست بوو، دەچێتە Live TV؛ ئەگەر سەرکەوتوو نەبوو، هەڵە بە بۆکسی سوور دەردەکەوێت."
+            textSize = 13f; setTextColor(grey); setPadding(0, dp(2), 0, dp(8))
+        })
+        val sourceName = edit("ناوی Playlist بنووسە")
+        content.addView(sourceName)
+        val status = TextView(this).apply {
+            textSize = 13f; setPadding(dp(10), dp(10), dp(10), dp(10)); visibility = View.GONE
+        }
+        playlistStatusView = status
+        content.addView(status, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(4), 0, dp(6)) })
 
-        content.addView(button("هەڵبژاردنی فایلی M3U / M3U8") {
-            pickPlaylist.launch(arrayOf("text/*", "application/octet-stream", "application/x-mpegURL", "application/vnd.apple.mpegurl", "*/*"))
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(4), 0, dp(12)) })
+        content.addView(label("M3U / M3U8 URL"))
+        val urlInput = edit("لینکی تەواوی http:// یان https://")
+        content.addView(urlInput)
+        content.addView(button("Save و تاقیکردنەوەی لینک") {
+            val name = sourceName.text.toString().trim()
+            val url = urlInput.text.toString().trim()
+            if (name.isBlank()) showPlaylistStatus("تکایە ناوی Playlist بنووسە", false)
+            else if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) showPlaylistStatus("تکایە لینکێکی دروستی http یان https بنووسە", false)
+            else {
+                val source = PlaylistSource(UUID.randomUUID().toString(), name, "url", url)
+                loadUrl(url, source, quiet = false, returnHome = true)
+            }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(8)) })
+
+        content.addView(label("M3U / M3U8 فایل"))
+        content.addView(button("هەڵبژاردنی فایل و Save") {
+            val name = sourceName.text.toString().trim()
+            if (name.isBlank()) showPlaylistStatus("پێش هەڵبژاردنی فایل، ناوی Playlist بنووسە", false)
+            else {
+                pendingFileName = name
+                pickPlaylist.launch(arrayOf("text/*", "application/octet-stream", "application/x-mpegURL", "application/vnd.apple.mpegurl", "*/*"))
+            }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(8)) })
 
         content.addView(label("Xtream Codes"))
+        val xtreamName = edit("ناوی Playlist ـی Xtream")
         val server = edit("Server URL، وەک http://example.com:8080")
         val username = edit("Username")
-        val password = edit("Password")
-        password.inputType = 129
-        content.addView(server)
-        content.addView(username)
-        content.addView(password)
-        content.addView(button("دروستکردن و بارکردنی Xtream") {
+        val password = edit("Password").apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        content.addView(xtreamName); content.addView(server); content.addView(username); content.addView(password)
+        content.addView(button("Save و تاقیکردنەوەی Xtream") {
+            val name = xtreamName.text.toString().trim()
             val base = server.text.toString().trim().trimEnd('/')
             val user = username.text.toString().trim()
             val pass = password.text.toString().trim()
-            if (base.isBlank() || user.isBlank() || pass.isBlank()) {
-                toast("هەموو خانەکانی Xtream پڕ بکەرەوە")
-            } else if (!base.startsWith("http://", true) && !base.startsWith("https://", true)) {
-                toast("Server URL دەبێت بە http:// یان https:// دەست پێ بکات")
-            } else {
+            if (name.isBlank() || base.isBlank() || user.isBlank() || pass.isBlank()) showPlaylistStatus("ناو، Server URL، Username و Password پڕ بکەرەوە", false)
+            else if (!base.startsWith("http://", true) && !base.startsWith("https://", true)) showPlaylistStatus("Server URL دەبێت بە http:// یان https:// دەست پێ بکات", false)
+            else {
                 val link = "$base/get.php?username=${Uri.encode(user)}&password=${Uri.encode(pass)}&type=m3u_plus&output=ts"
-                val source = PlaylistSource(UUID.randomUUID().toString(), "Xtream - $user", "url", link)
-                sources.add(source)
-                saveSources()
-                openSource(source, returnHome = true)
+                loadUrl(link, PlaylistSource(UUID.randomUUID().toString(), name, "url", link), quiet = false, returnHome = true)
             }
-        }, LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(5), 0, dp(12)) })
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(8)) })
 
-        content.addView(label("Playlist ـە پاشەکەوتکراوەکان"))
+        content.addView(label("MAC / Stalker Portal"))
+        val portalName = edit("ناوی Playlist ـی MAC")
+        val portalUrl = edit("Portal URL، وەک http://server:8080/c/")
+        val macAddress = edit("MAC Address، وەک 00:1A:79:XX:XX:XX")
+        content.addView(portalName); content.addView(portalUrl); content.addView(macAddress)
+        content.addView(button("پاشەکەوتکردنی MAC / Portal") {
+            val name = portalName.text.toString().trim()
+            val base = portalUrl.text.toString().trim()
+            val mac = macAddress.text.toString().trim().uppercase()
+            if (name.isBlank() || base.isBlank() || mac.isBlank()) showPlaylistStatus("ناو، Portal URL و MAC Address پڕ بکەرەوە", false)
+            else if ((!base.startsWith("http://", true) && !base.startsWith("https://", true)) || !mac.matches(Regex("(?i)^([0-9a-f]{2}:){5}[0-9a-f]{2}$"))) showPlaylistStatus("Portal URL یان MAC Address دروست نییە", false)
+            else {
+                val existing = sources.firstOrNull { it.type == "portal" && it.value.equals(base, true) && it.extra.equals(mac, true) }
+                if (existing != null) {
+                    existing.name = name; saveSources(); renderSources()
+                } else sources.add(PlaylistSource(UUID.randomUUID().toString(), name, "portal", base, mac))
+                saveSources(); renderSources()
+                showPlaylistStatus("MAC / Portal پاشەکەوت کرا. تێبینی: پەخشکردنی کەناڵەکانی Stalker پێویستی بە جێبەجێکردنی API ـی Portal هەیە و هێشتا لەم وەشانەدا چالاک نییە.", true)
+            }
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(12) })
+
+        content.addView(label("٢. Playlist ـە پاشەکەوتکراوەکان — کردنەوە، ئیدیت، سڕینەوە"))
         sourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(sourceList)
         scroll.addView(content)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         renderSources()
+    }
+
+    private fun showPlaylistStatus(message: String, success: Boolean) {
+        val view = playlistStatusView ?: return
+        view.text = message
+        view.setTextColor(if (success) Color.rgb(170, 255, 190) else Color.rgb(255, 255, 255))
+        view.background = rounded(if (success) Color.rgb(20, 75, 42) else Color.rgb(170, 25, 35), 8)
+        view.visibility = View.VISIBLE
     }
 
     private fun renderSources() {
@@ -374,14 +414,14 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(white)
             })
             row.addView(TextView(this).apply {
-                text = source.type.uppercase()
+                text = when (source.type) { "url" -> "M3U / M3U8 / XTREAM"; "file" -> "M3U FILE"; "portal" -> "MAC / STALKER PORTAL"; else -> source.type.uppercase() }
                 textSize = 11f
                 setTextColor(grey)
                 maxLines = 1
             })
             val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             buttons.addView(button("کردنەوە") { openSource(source, returnHome = true) }, LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(0, dp(6), dp(4), 0) })
-            buttons.addView(button("ناونان") { renameSource(source) }, LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(dp(4), dp(6), dp(4), 0) })
+            buttons.addView(button("ئیدیت") { editSource(source) }, LinearLayout.LayoutParams(0, dp(40), 1f).apply { setMargins(dp(4), dp(6), dp(4), 0) })
             buttons.addView(button("سڕینەوە") {
                 AlertDialog.Builder(this@MainActivity)
                     .setMessage("ئەم Playlist ـە بسڕدرێتەوە؟")
@@ -402,17 +442,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun renameSource(source: PlaylistSource) {
-        val input = edit("ناوی Playlist", source.name)
+    private fun editSource(source: PlaylistSource) {
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), 0) }
+        val nameInput = edit("ناوی Playlist", source.name)
+        panel.addView(nameInput)
+        var valueInput: EditText? = null
+        var extraInput: EditText? = null
+        if (source.type == "url") {
+            valueInput = edit("M3U / M3U8 URL", source.value); panel.addView(valueInput)
+        } else if (source.type == "portal") {
+            valueInput = edit("Portal URL", source.value); panel.addView(valueInput)
+            extraInput = edit("MAC Address", source.extra); panel.addView(extraInput)
+        }
         AlertDialog.Builder(this)
-            .setTitle("گۆڕینی ناوی Playlist")
-            .setView(input)
+            .setTitle("ئیدیتی Playlist")
+            .setView(panel)
             .setNegativeButton("پاشگەزبوونەوە", null)
             .setPositiveButton("پاشەکەوت") { _, _ ->
-                source.name = input.text.toString().trim().ifBlank { source.name }
+                val name = nameInput.text.toString().trim()
+                if (name.isBlank()) { toast("ناوی Playlist بەتاڵ نەبێت"); return@setPositiveButton }
+                source.name = name
+                valueInput?.let { source.value = it.text.toString().trim() }
+                extraInput?.let { source.extra = it.text.toString().trim().uppercase() }
+                if (source.type == "portal" && !source.extra.matches(Regex("(?i)^([0-9a-f]{2}:){5}[0-9a-f]{2}$"))) {
+                    toast("MAC Address دروست نییە")
+                    return@setPositiveButton
+                }
                 if (activeSourceId == source.id) activeSourceName = source.name
-                saveSources()
-                renderSources()
+                saveSources(); renderSources()
             }.show()
     }
 
@@ -433,7 +490,10 @@ class MainActivity : AppCompatActivity() {
             }
             "portal" -> {
                 categoryAfterSourceLoad = null
-                toast("Stalker Portal لەم وەشانەدا پەخشکردنی ڕاستەوخۆی API ـی تێدا جێبەجێ نەکراوە.")
+                AlertDialog.Builder(this)
+                    .setTitle(source.name)
+                    .setMessage("ئەم MAC / Portal ـە پاشەکەوت کراوە، بەڵام پەخشکردنی کەناڵەکانی Stalker پێویستی بە جێبەجێکردنی API ـی Portal هەیە کە لەم وەشانەدا هێشتا چالاک نییە.")
+                    .setPositiveButton("باشە", null).show()
             }
         }
     }
@@ -450,10 +510,9 @@ class MainActivity : AppCompatActivity() {
                 }
                 val file = File(filesDir, "playlist_${UUID.randomUUID()}.m3u")
                 withContext(Dispatchers.IO) { file.writeText(text) }
-                val source = PlaylistSource(UUID.randomUUID().toString(), "M3U ${sources.size + 1}", "file", file.absolutePath)
-                sources.add(source)
-                saveSources()
+                val source = PlaylistSource(UUID.randomUUID().toString(), pendingFileName.ifBlank { "M3U ${sources.size + 1}" }, "file", file.absolutePath)
                 activatePlaylist(text, source, returnHome = true)
+                pendingFileName = ""
                 toast("Playlist زیادکرا و پاشەکەوت کرا")
             } catch (e: Exception) {
                 toast("نەتوانرا فایلەکە بخوێندرێتەوە: ${e.localizedMessage ?: "هەڵە"}")
@@ -500,7 +559,11 @@ class MainActivity : AppCompatActivity() {
                 if (!quiet) toast("${items.size} بڕگە بارکرا")
             } catch (e: Exception) {
                 categoryAfterSourceLoad = null
-                if (!quiet) toast("بارکردن سەرکەوتوو نەبوو: ${e.localizedMessage ?: "هەڵەی نەناسراو"}")
+                if (!quiet) {
+                    val message = "ببورە، نەتوانرا ئەم Playlist ـە داخڵ بکرێت. ${e.localizedMessage ?: "لینکەکە دروست نییە یان وەڵامی نەداوەتەوە"}"
+                    showPlaylistStatus(message, false)
+                    toast("بارکردن سەرکەوتوو نەبوو")
+                }
             } finally {
                 loading = false
             }
@@ -511,10 +574,13 @@ class MainActivity : AppCompatActivity() {
         val parsed = parsePlaylist(text)
         if (parsed.isEmpty()) {
             categoryAfterSourceLoad = null
+            showPlaylistStatus("ببورە، نەتوانی ئەم Playlist ـە داخڵ بکەیت؛ هیچ لینکێکی ڤیدیۆیی تێدا نەدۆزرایەوە.", false)
             toast("هیچ لینکێکی ڤیدیۆ لە Playlist ـەکەدا نەدۆزرایەوە")
             return
         }
         playlistText = text
+        if (sources.none { it.id == source.id }) sources.add(source)
+        saveSources()
         items.clear()
         items.addAll(parsed)
         activeSourceId = source.id
