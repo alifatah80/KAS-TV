@@ -378,7 +378,7 @@ class MainActivity : AppCompatActivity() {
                 saveSources(); renderSources()
                 showPlaylistStatus("MAC / Portal پاشەکەوت کرا. تێبینی: پەخشکردنی کەناڵەکانی Stalker پێویستی بە جێبەجێکردنی API ـی Portal هەیە و هێشتا لەم وەشانەدا چالاک نییە.", true)
             }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(12) })
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(12)) })
 
         content.addView(label("٢. Playlist ـە پاشەکەوتکراوەکان — کردنەوە، ئیدیت، سڕینەوە"))
         sourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
