@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
     private var categoryAfterSourceLoad: String? = null
     private var pendingFileName: String = ""
     private var playlistStatusView: TextView? = null
+    private var loadingDialog: AlertDialog? = null
 
     private lateinit var root: LinearLayout
     private lateinit var sourceList: LinearLayout
@@ -378,7 +379,7 @@ class MainActivity : AppCompatActivity() {
                 saveSources(); renderSources()
                 showPlaylistStatus("MAC / Portal پاشەکەوت کرا. تێبینی: پەخشکردنی کەناڵەکانی Stalker پێویستی بە جێبەجێکردنی API ـی Portal هەیە و هێشتا لەم وەشانەدا چالاک نییە.", true)
             }
-        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(12)) })
+        }, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(4), 0, dp(12) })
 
         content.addView(label("٢. Playlist ـە پاشەکەوتکراوەکان — کردنەوە، ئیدیت، سڕینەوە"))
         sourceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -387,6 +388,53 @@ class MainActivity : AppCompatActivity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         renderSources()
+    }
+
+    private fun showLoadingDialog(message: String = "تکایە چاوەڕوان بە، Playlist پشکنین و بارکردن دەکرێت...") {
+        if (isFinishing || isDestroyed) return
+        dismissLoadingDialog()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(22), dp(24), dp(22))
+        }
+        panel.addView(ProgressBar(this), LinearLayout.LayoutParams(dp(48), dp(48)).apply {
+            gravity = Gravity.CENTER
+            bottomMargin = dp(14)
+        })
+        panel.addView(TextView(this).apply {
+            text = message
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+        })
+        loadingDialog = AlertDialog.Builder(this)
+            .setView(panel)
+            .setCancelable(false)
+            .create()
+        loadingDialog?.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        loadingDialog?.show()
+    }
+
+    private fun dismissLoadingDialog() {
+        loadingDialog?.dismiss()
+        loadingDialog = null
+    }
+
+    private fun showPlaylistSuccess(message: String = "سەرکەوتوو بوو! Playlist قبوڵ کرا.") {
+        dismissLoadingDialog()
+        if (isFinishing || isDestroyed) return
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("✅ سەرکەوتوو بوو")
+            .setMessage(message)
+            .setCancelable(false)
+            .create()
+        dialog.setOnShowListener {
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!isFinishing && !isDestroyed && dialog.isShowing) dialog.dismiss()
+            }, 1300L)
+        }
+        dialog.show()
     }
 
     private fun showPlaylistStatus(message: String, success: Boolean) {
@@ -499,13 +547,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun importPlaylistFile(uri: Uri) {
+        showLoadingDialog("تکایە چاوەڕوان بە، فایلەکە دەخوێندرێتەوە و پشکنین دەکرێت...")
         lifecycleScope.launch {
             try {
                 val text = withContext(Dispatchers.IO) {
                     contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
                 }
-                if (text.isBlank() || !text.contains("#EXTINF", true)) {
-                    toast("فایلەکە بەتاڵە یان Playlist ـی M3U نییە")
+                if (text.isBlank() || !text.contains("#EXTINF", true) || parsePlaylist(text).isEmpty()) {
+                    showPlaylistStatus("ببورە، ئەم فایلە قبوڵ نەکرا؛ فایلەکە M3U/M3U8 ـی دروست نییە یان لینکێکی ڤیدیۆیی تێدا نییە.", false)
+                    toast("فایلەکە قبوڵ نەکرا")
                     return@launch
                 }
                 val file = File(filesDir, "playlist_${UUID.randomUUID()}.m3u")
@@ -513,9 +563,12 @@ class MainActivity : AppCompatActivity() {
                 val source = PlaylistSource(UUID.randomUUID().toString(), pendingFileName.ifBlank { "M3U ${sources.size + 1}" }, "file", file.absolutePath)
                 activatePlaylist(text, source, returnHome = true)
                 pendingFileName = ""
-                toast("Playlist زیادکرا و پاشەکەوت کرا")
+                showPlaylistSuccess("سەرکەوتوو بوو! فایلەکە قبوڵ کرا و پاشەکەوت کرا.")
             } catch (e: Exception) {
-                toast("نەتوانرا فایلەکە بخوێندرێتەوە: ${e.localizedMessage ?: "هەڵە"}")
+                showPlaylistStatus("ببورە، نەتوانرا فایلەکە بخوێندرێتەوە: ${e.localizedMessage ?: "هەڵەیەک ڕوویدا"}", false)
+                toast("فایلەکە قبوڵ نەکرا")
+            } finally {
+                dismissLoadingDialog()
             }
         }
     }
@@ -526,7 +579,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         loading = true
-        if (!quiet) toast("Playlist بار دەکرێت...")
+        if (!quiet) showLoadingDialog()
         lifecycleScope.launch {
             try {
                 val text = withContext(Dispatchers.IO) {
@@ -544,28 +597,29 @@ class MainActivity : AppCompatActivity() {
                         connection.disconnect()
                     }
                 }
-                if (!text.contains("#EXTINF", true)) throw Exception("ئەم لینکە Playlist ـی M3U نییە")
+                if (!text.contains("#EXTINF", true) || parsePlaylist(text).isEmpty()) {
+                    throw Exception("ئەم لینکە Playlist ـی M3U/M3U8 ـی دروست نییە یان هیچ لینکێکی ڤیدیۆیی تێدا نییە")
+                }
                 val active = source ?: sources.firstOrNull { it.value == url }
-                if (active == null) {
-                    val newSource = PlaylistSource(UUID.randomUUID().toString(), "Playlist ${sources.size + 1}", "url", url)
-                    sources.add(newSource)
-                    saveSources()
-                    activatePlaylist(text, newSource, returnHome)
-                } else {
-                    activatePlaylist(text, active, returnHome)
+                val acceptedSource = active ?: PlaylistSource(UUID.randomUUID().toString(), "Playlist ${sources.size + 1}", "url", url)
+                activatePlaylist(text, acceptedSource, returnHome)
+                // Do not report success unless parsing actually produced playable entries.
+                if (items.isEmpty() || activeSourceId != acceptedSource.id) {
+                    throw Exception("هیچ کەناڵێکی دروست لە Playlist ـەکەدا نەدۆزرایەوە")
                 }
                 lastUrl = url
                 prefs.edit().putString("last_url", url).apply()
-                if (!quiet) toast("${items.size} بڕگە بارکرا")
+                if (!quiet) showPlaylistSuccess("سەرکەوتوو بوو! لینکەکە قبوڵ کرا و ${items.size} بڕگە دۆزرایەوە.")
             } catch (e: Exception) {
                 categoryAfterSourceLoad = null
                 if (!quiet) {
                     val message = "ببورە، نەتوانرا ئەم Playlist ـە داخڵ بکرێت. ${e.localizedMessage ?: "لینکەکە دروست نییە یان وەڵامی نەداوەتەوە"}"
                     showPlaylistStatus(message, false)
-                    toast("بارکردن سەرکەوتوو نەبوو")
+                    toast("ببورە، لینکەکە قبوڵ نەکرا")
                 }
             } finally {
                 loading = false
+                if (!quiet) dismissLoadingDialog()
             }
         }
     }
